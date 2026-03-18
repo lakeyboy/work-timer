@@ -47,8 +47,8 @@
                             type="time"
                             id="startTime"
                             v-model="config.startTime"
-                            @change="saveAndUpdate"
-                            @input="saveAndUpdate"
+                            @input="(e) => handleTimeInput(e, 'startTime')"
+                            @change="(e) => handleTimeChange(e, 'startTime')"
                             aria-label="上班时间"
                         />
                     </div>
@@ -58,8 +58,8 @@
                             type="time"
                             id="endTime"
                             v-model="config.endTime"
-                            @change="saveAndUpdate"
-                            @input="saveAndUpdate"
+                            @input="(e) => handleTimeInput(e, 'endTime')"
+                            @change="(e) => handleTimeChange(e, 'endTime')"
                             aria-label="下班时间"
                         />
                     </div>
@@ -82,8 +82,8 @@
                             type="time"
                             id="restStart"
                             v-model="config.restStart"
-                            @change="saveAndUpdate"
-                            @input="saveAndUpdate"
+                            @input="(e) => handleTimeInput(e, 'restStart')"
+                            @change="(e) => handleTimeChange(e, 'restStart')"
                             aria-label="午休开始时间"
                         />
                     </div>
@@ -93,8 +93,8 @@
                             type="time"
                             id="restEnd"
                             v-model="config.restEnd"
-                            @change="saveAndUpdate"
-                            @input="saveAndUpdate"
+                            @input="(e) => handleTimeInput(e, 'restEnd')"
+                            @change="(e) => handleTimeChange(e, 'restEnd')"
                             aria-label="午休结束时间"
                         />
                     </div>
@@ -213,6 +213,13 @@
     let lastShiftStart = null;
     let lastShiftEnd = null;
     let lastDateKey = null;
+
+    const lastValidTimes = reactive({
+        startTime: "09:00",
+        endTime: "18:00",
+        restStart: "12:00",
+        restEnd: "13:00",
+    });
 
     const statusMap = {
         上班中: "上班中 💼",
@@ -576,10 +583,22 @@
             if (saved) {
                 const parsed = JSON.parse(saved);
                 const { start, end, restStart, restEnd } = parsed;
-                if (start) config.startTime = start;
-                if (end) config.endTime = end;
-                if (restStart) config.restStart = restStart;
-                if (restEnd) config.restEnd = restEnd;
+                if (start) {
+                    config.startTime = start;
+                    lastValidTimes.startTime = start;
+                }
+                if (end) {
+                    config.endTime = end;
+                    lastValidTimes.endTime = end;
+                }
+                if (restStart) {
+                    config.restStart = restStart;
+                    lastValidTimes.restStart = restStart;
+                }
+                if (restEnd) {
+                    config.restEnd = restEnd;
+                    lastValidTimes.restEnd = restEnd;
+                }
             }
         } catch (e) {
             console.warn("加载配置失败，使用默认值:", e);
@@ -630,6 +649,37 @@
         }
         if (e.key === "Escape") {
             closeModal();
+        }
+    }
+
+    function handleTimeInput(event, fieldName) {
+        const newValue = event.target.value;
+
+        if (!newValue || newValue.trim() === "") {
+            event.target.value = lastValidTimes[fieldName];
+            config[fieldName] = lastValidTimes[fieldName];
+
+            if (navigator.vibrate) {
+                navigator.vibrate(50);
+            }
+
+            return false;
+        }
+
+        lastValidTimes[fieldName] = newValue;
+        return true;
+    }
+
+    function handleTimeChange(event, fieldName) {
+        const isValid = handleTimeInput(event, fieldName);
+
+        if (isValid) {
+            saveAndUpdate();
+        } else {
+            event.target.blur();
+            setTimeout(() => {
+                event.target.focus();
+            }, 100);
         }
     }
 
