@@ -1295,6 +1295,21 @@
     }
     .app {
         width: 100%;
+        min-height: 100vh;
+    }
+
+    * {
+        box-sizing: border-box;
+        font-family:
+            system-ui,
+            -apple-system,
+            "Segoe UI",
+            Roboto,
+            "Helvetica Neue",
+            sans-serif;
+        margin: 0;
+        padding: 0;
+        -webkit-tap-highlight-color: transparent;
     }
     /* ... 其余样式保持不变 ... */
 </style>
