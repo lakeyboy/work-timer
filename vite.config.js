@@ -8,6 +8,6 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'static',
     sourcemap: false,
-    minify: 'terser'
+    // minify: 'terser'
   }
 })
