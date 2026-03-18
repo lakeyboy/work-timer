@@ -39,6 +39,15 @@
                 <span class="current-time-value">{{ currentTime }}</span>
             </div>
 
+            <div v-show="showCountdown" id="countdownContainer">
+                <div class="countdown-block">
+                    <div class="countdown-title">距离下班还剩</div>
+                    <div class="countdown-number" aria-live="polite">
+                        {{ countdownText }}
+                    </div>
+                </div>
+            </div>
+
             <div class="time-panel">
                 <div class="input-group">
                     <div class="input-item">
@@ -105,15 +114,6 @@
                     role="alert"
                 >
                     ⚠️ 午休时间超出工作时段范围
-                </div>
-            </div>
-
-            <div v-show="showCountdown" id="countdownContainer">
-                <div class="countdown-block">
-                    <div class="countdown-title">距离下班还剩</div>
-                    <div class="countdown-number" aria-live="polite">
-                        {{ countdownText }}
-                    </div>
                 </div>
             </div>
 
