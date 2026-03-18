@@ -18,8 +18,14 @@
                             >
                         </div>
                     </template>
+                    <template v-else-if="status === '未上班'">
+                        <span>{{ statusText }}</span>
+                    </template>
+                    <template v-else-if="status === '已下班'">
+                        <span>{{ statusText }}</span>
+                    </template>
                     <template v-else>
-                        {{ statusText }}
+                        <span>{{ statusText }}</span>
                     </template>
                 </span>
             </div>
@@ -495,6 +501,7 @@
             updateTopStatus(newStatus, null, null, null, null);
         } else if (newStatus === "上班中") {
             showCountdown.value = true;
+            status.value = newStatus;
             if (currentShiftEnd) {
                 const remainingMs = currentShiftEnd - now;
                 countdownText.value = formatRemaining(remainingMs);
@@ -925,10 +932,12 @@
     .status-worked-time {
         font-size: clamp(0.9rem, 2.5vw, 1rem);
         font-weight: 600;
-        background: rgba(255, 255, 255, 0.6);
+        background: rgba(255, 255, 255, 0.75);
         padding: 4px 12px;
         border-radius: 20px;
         font-family: "JetBrains Mono", monospace;
+        color: #4a3a2a;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
 
     .worked-badge {
@@ -1210,16 +1219,12 @@
         position: fixed;
         inset: 0;
         background: rgba(0, 0, 0, 0.45);
-        display: none;
+        display: flex;
         align-items: center;
         justify-content: center;
         padding: 20px;
         z-index: 2000;
         -webkit-overflow-scrolling: touch;
-    }
-
-    .modal-overlay.active {
-        display: flex;
     }
 
     .modal {
