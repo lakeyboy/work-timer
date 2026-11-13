@@ -5,28 +5,21 @@
             <div class="sub">精确到秒 · 下班后自动隐藏模块 · 无冗余信息</div>
 
             <div style="text-align: center; margin-bottom: 14px">
-                <span
-                    class="status-badge status-top"
-                    role="status"
-                    aria-live="polite"
-                >
-                    <template v-if="status === '上班中'">
-                        <div class="status-with-worked">
-                            <span class="status-main">{{ status }} 💼</span>
-                            <span class="status-worked-time"
-                                >已工作 {{ workedText }}</span
-                            >
-                        </div>
-                    </template>
-                    <template v-else-if="status === '未上班'">
-                        <span>{{ statusText }}</span>
-                    </template>
-                    <template v-else-if="status === '已下班'">
-                        <span>{{ statusText }}</span>
-                    </template>
-                    <template v-else>
-                        <span>{{ statusText }}</span>
-                    </template>
+                <span class="status-badge status-top">
+                    <span class="status-with-worked">
+                        <!-- aria-live 只包住状态文案，避免「已工作」每秒播报 -->
+                        <span
+                            class="status-main"
+                            role="status"
+                            aria-live="polite"
+                            >{{ statusText }}</span
+                        >
+                        <span
+                            v-if="status === '上班中'"
+                            class="status-worked-time"
+                            >已工作 {{ workedText }}</span
+                        >
+                    </span>
                 </span>
             </div>
 
@@ -42,9 +35,8 @@
             <div v-show="showCountdown" id="countdownContainer">
                 <div class="countdown-block">
                     <div class="countdown-title">距离下班还剩</div>
-                    <div class="countdown-number" aria-live="polite">
-                        {{ countdownText }}
-                    </div>
+                    <!-- 倒计时每秒变化，不放进 aria-live，避免读屏连续播报 -->
+                    <div class="countdown-number">{{ countdownText }}</div>
                 </div>
             </div>
 
@@ -117,6 +109,18 @@
                 </div>
             </div>
 
+            <div class="tool-panel">
+                <div class="tool-title">🧰 小工具</div>
+                <button class="tool-entry" @click="showCarTool = true">
+                    <span class="tool-entry-icon" aria-hidden="true">🚗</span>
+                    <span class="tool-entry-text">
+                        <strong>购车工具</strong>
+                        <small>换算轮胎、玻璃的生产日期</small>
+                    </span>
+                    <span class="tool-entry-arrow" aria-hidden="true">›</span>
+                </button>
+            </div>
+
             <div class="footer-note">
                 <div
                     style="
@@ -148,7 +152,7 @@
 
         <Teleport to="body">
             <div
-                v-show="showModal"
+                v-if="showModal"
                 class="modal-overlay"
                 @click.self="closeModal"
                 role="dialog"
@@ -157,6 +161,7 @@
             >
                 <div class="modal">
                     <button
+                        ref="closeButton"
                         class="modal-close"
                         @click="closeModal"
                         aria-label="关闭弹窗"
@@ -165,10 +170,7 @@
                     </button>
                     <h2 id="modalTitle">支持一下作者</h2>
                     <p>扫一扫二维码，给我买杯咖啡 ☕</p>
-                    <img
-                        src="https://via.placeholder.com/180x180.png?text=QR+Code"
-                        alt="赞助二维码"
-                    />
+                    <img :src="sponsorQr" alt="赞助二维码" />
                     <p
                         style="
                             font-size: 0.85rem;
@@ -181,45 +183,29 @@
                 </div>
             </div>
         </Teleport>
+
+        <CarDateTool v-if="showCarTool" @close="showCarTool = false" />
     </div>
 </template>
 
 <script setup>
-    import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
+    import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+    import { useWorkClock } from "./composables/useWorkClock.js";
+    import CarDateTool from "./components/CarDateTool.vue";
+    import sponsorQr from "./assets/sponsor-placeholder.svg";
 
-    const STORAGE_KEY = "workTimeConfigV5";
-
-    const config = reactive({
-        startTime: "09:00",
-        endTime: "18:00",
-        restStart: "12:00",
-        restEnd: "13:00",
-    });
-
-    const currentTime = ref("");
-    const status = ref("");
-    const countdownText = ref("");
-    const workedSeconds = ref(0);
-    const showCountdown = ref(true);
-    const showModal = ref(false);
-
-    const warnings = reactive({
-        timeConflict: false,
-        restOutOfRange: false,
-    });
-
-    let timer = null;
-    let lastStatus = null;
-    let lastShiftStart = null;
-    let lastShiftEnd = null;
-    let lastDateKey = null;
-
-    const lastValidTimes = reactive({
-        startTime: "09:00",
-        endTime: "18:00",
-        restStart: "12:00",
-        restEnd: "13:00",
-    });
+    const {
+        config,
+        currentTime,
+        status,
+        countdownText,
+        workedText,
+        showCountdown,
+        warnings,
+        updateTime,
+        commitTimes,
+        resetToDefault,
+    } = useWorkClock();
 
     const statusMap = {
         上班中: "上班中 💼",
@@ -229,520 +215,84 @@
         错误: "⚠️ 错误",
     };
 
-    const statusText = computed(() => statusMap[status.value] || status.value);
-    const workedText = computed(() => formatWorked(workedSeconds.value));
+    const statusText = computed(
+        () => statusMap[status.value] || status.value,
+    );
 
-    function parseTimeStr(timeStr) {
-        if (!timeStr || !timeStr.includes(":")) return null;
-        const parts = timeStr.split(":");
-        const hour = parseInt(parts[0], 10);
-        const minute = parseInt(parts[1], 10);
-        if (isNaN(hour) || isNaN(minute)) return null;
-        return { hour, minute };
-    }
-
-    function buildDateFromBase(baseDate, hour, minute) {
-        const d = new Date(baseDate);
-        d.setHours(hour, minute, 0, 0);
-        return d;
-    }
-
-    function getEndDateForBase(baseDate, startHour, startMin, endHour, endMin) {
-        const startDate = buildDateFromBase(baseDate, startHour, startMin);
-        let endDate = buildDateFromBase(baseDate, endHour, endMin);
-        if (endDate <= startDate) {
-            endDate.setDate(endDate.getDate() + 1);
-        }
-        return endDate;
-    }
-
-    function computeDetails(now, startStr, endStr) {
-        const startTime = parseTimeStr(startStr);
-        const endTime = parseTimeStr(endStr);
-        if (!startTime || !endTime) return null;
-
-        const { hour: sH, minute: sM } = startTime;
-        const { hour: eH, minute: eM } = endTime;
-
-        const yesterday = new Date(now);
-        yesterday.setDate(yesterday.getDate() - 1);
-        const today = new Date(now);
-        const tomorrow = new Date(now);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-
-        const endYesterday = getEndDateForBase(yesterday, sH, sM, eH, eM);
-        const endToday = getEndDateForBase(today, sH, sM, eH, eM);
-        const endTomorrow = getEndDateForBase(tomorrow, sH, sM, eH, eM);
-
-        const candidates = [endYesterday, endToday, endTomorrow].filter(
-            (d) => d > now,
-        );
-        if (candidates.length === 0) return null;
-
-        const nextEnd = new Date(
-            Math.min(...candidates.map((d) => d.getTime())),
-        );
-
-        const startYesterday = buildDateFromBase(yesterday, sH, sM);
-        const endYesterdayInterval = getEndDateForBase(
-            yesterday,
-            sH,
-            sM,
-            eH,
-            eM,
-        );
-        const startToday = buildDateFromBase(today, sH, sM);
-        const endTodayInterval = getEndDateForBase(today, sH, sM, eH, eM);
-
-        const inYesterday = now >= startYesterday && now < endYesterdayInterval;
-        const inToday = now >= startToday && now < endTodayInterval;
-
-        let currentStatus,
-            currentShiftStart = null,
-            currentShiftEnd = null;
-
-        if (inYesterday) {
-            currentStatus = "上班中";
-            currentShiftStart = startYesterday;
-            currentShiftEnd = endYesterdayInterval;
-        } else if (inToday) {
-            currentStatus = "上班中";
-            currentShiftStart = startToday;
-            currentShiftEnd = endTodayInterval;
-        } else {
-            if (now < startToday && !inYesterday) {
-                currentStatus = "未上班";
-            } else {
-                currentStatus = "已下班";
-            }
-        }
-
-        return {
-            nextEnd,
-            status: currentStatus,
-            currentShiftStart,
-            currentShiftEnd,
-        };
-    }
-
-    function calculateWorkedSeconds(
-        now,
-        shiftStart,
-        shiftEnd,
-        restStartObj,
-        restEndObj,
-    ) {
-        if (!shiftStart || now < shiftStart) return 0;
-
-        const restStart = new Date(shiftStart);
-        restStart.setHours(restStartObj.hour, restStartObj.minute, 0, 0);
-        const restEnd = new Date(shiftStart);
-        restEnd.setHours(restEndObj.hour, restEndObj.minute, 0, 0);
-
-        if (restEnd <= restStart) {
-            restEnd.setDate(restEnd.getDate() + 1);
-        }
-
-        const shiftStartMs = shiftStart.getTime();
-        const shiftEndMs = shiftEnd.getTime();
-        const restStartMs = Math.max(restStart.getTime(), shiftStartMs);
-        const restEndMs = Math.min(restEnd.getTime(), shiftEndMs);
-
-        const nowMs = now.getTime();
-        let workedEndMs = Math.min(nowMs, shiftEndMs);
-
-        if (nowMs > restStartMs && nowMs < restEndMs) {
-            workedEndMs = restStartMs;
-        }
-
-        let totalWorkMs = workedEndMs - shiftStartMs;
-        const restIntersectStart = Math.max(restStartMs, shiftStartMs);
-        const restIntersectEnd = Math.min(restEndMs, workedEndMs);
-        const restDurationMs = Math.max(
-            0,
-            restIntersectEnd - restIntersectStart,
-        );
-
-        const workedMs = totalWorkMs - restDurationMs;
-        return Math.max(0, Math.floor(workedMs / 1000));
-    }
-
-    function formatRemaining(ms) {
-        if (ms < 0) return "0 小时 0 分 0 秒";
-        const totalSeconds = Math.floor(ms / 1000);
-        const days = Math.floor(totalSeconds / 86400);
-        const hours = Math.floor((totalSeconds % 86400) / 3600);
-        const minutes = Math.floor((totalSeconds % 3600) / 60);
-        const seconds = totalSeconds % 60;
-
-        let result = "";
-        if (days > 0) result += `${days}天`;
-        result += `${hours}小时${minutes}分${seconds}秒`;
-        return result;
-    }
-
-    function formatWorked(seconds) {
-        if (seconds < 0) return "--小时--分--秒";
-        const days = Math.floor(seconds / 86400);
-        const hours = Math.floor((seconds % 86400) / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        const secs = seconds % 60;
-
-        let result = "";
-        if (days > 0) result += `${days}天`;
-        result += `${hours}小时${minutes}分${secs}秒`;
-        return result;
-    }
-
-    function updateClock() {
-        const now = new Date();
-        const y = now.getFullYear();
-        const M = String(now.getMonth() + 1).padStart(2, "0");
-        const d = String(now.getDate()).padStart(2, "0");
-        const hh = String(now.getHours()).padStart(2, "0");
-        const mm = String(now.getMinutes()).padStart(2, "0");
-        const ss = String(now.getSeconds()).padStart(2, "0");
-        currentTime.value = `${y}/${M}/${d} ${hh}:${mm}:${ss}`;
-    }
-
-    function updateTopStatus(
-        newStatus,
-        shiftStart,
-        shiftEnd,
-        restStartVal,
-        restEndVal,
-    ) {
-        if (newStatus === "上班中" && shiftStart && shiftEnd) {
-            const now = new Date();
-            const restStartObj = parseTimeStr(restStartVal);
-            const restEndObj = parseTimeStr(restEndVal);
-
-            if (restStartObj && restEndObj) {
-                workedSeconds.value = calculateWorkedSeconds(
-                    now,
-                    shiftStart,
-                    shiftEnd,
-                    restStartObj,
-                    restEndObj,
-                );
-            } else {
-                const totalSeconds = Math.floor(
-                    (Math.min(now.getTime(), shiftEnd.getTime()) -
-                        shiftStart.getTime()) /
-                        1000,
-                );
-                workedSeconds.value = Math.max(0, totalSeconds);
-            }
-        } else {
-            workedSeconds.value = 0;
-        }
-    }
-
-    function updateDisplayOnly(now, newStatus, shiftStart, shiftEnd) {
-        if (newStatus === "上班中" && shiftStart && shiftEnd) {
-            const remainingMs = shiftEnd - now;
-            countdownText.value = formatRemaining(remainingMs);
-            updateTopStatus(
-                newStatus,
-                shiftStart,
-                shiftEnd,
-                config.restStart,
-                config.restEnd,
-            );
-        } else if (newStatus === "未上班") {
-            const details = computeDetails(
-                now,
-                config.startTime,
-                config.endTime,
-            );
-            if (details) {
-                const remainingMs = details.nextEnd - now;
-                countdownText.value = formatRemaining(remainingMs);
-            }
-        }
-    }
-
-    function updateRemaining() {
-        const now = new Date();
-        const dateKey = now.toDateString();
-
-        if (!config.startTime || !config.endTime) {
-            countdownText.value = "请设置时间";
-            status.value = "等待输入";
-            showCountdown.value = true;
-            return;
-        }
-
-        if (
-            dateKey === lastDateKey &&
-            lastStatus &&
-            (lastStatus === "上班中" || lastStatus === "未上班")
-        ) {
-            updateDisplayOnly(now, lastStatus, lastShiftStart, lastShiftEnd);
-            return;
-        }
-
-        const details = computeDetails(now, config.startTime, config.endTime);
-        if (!details) {
-            countdownText.value = "时间格式有误";
-            status.value = "错误";
-            showCountdown.value = true;
-            return;
-        }
-
-        const {
-            nextEnd,
-            status: newStatus,
-            currentShiftStart,
-            currentShiftEnd,
-        } = details;
-
-        if (newStatus === "已下班") {
-            showCountdown.value = false;
-            status.value = newStatus;
-        } else if (newStatus === "未上班") {
-            showCountdown.value = true;
-            const remainingMs = nextEnd - now;
-            countdownText.value = formatRemaining(remainingMs);
-            status.value = newStatus;
-            updateTopStatus(newStatus, null, null, null, null);
-        } else if (newStatus === "上班中") {
-            showCountdown.value = true;
-            status.value = newStatus;
-            if (currentShiftEnd) {
-                const remainingMs = currentShiftEnd - now;
-                countdownText.value = formatRemaining(remainingMs);
-            } else {
-                countdownText.value = "计算异常";
-            }
-            updateTopStatus(
-                newStatus,
-                currentShiftStart,
-                currentShiftEnd,
-                config.restStart,
-                config.restEnd,
-            );
-        }
-
-        lastStatus = newStatus;
-        lastShiftStart = currentShiftStart;
-        lastShiftEnd = currentShiftEnd;
-        lastDateKey = dateKey;
-    }
-
-    function validateTimeConfig() {
-        const startTime = parseTimeStr(config.startTime);
-        const endTime = parseTimeStr(config.endTime);
-        const restStartObj = parseTimeStr(config.restStart);
-        const restEndObj = parseTimeStr(config.restEnd);
-
-        if (startTime && endTime) {
-            const startDate = new Date(
-                2000,
-                0,
-                1,
-                startTime.hour,
-                startTime.minute,
-            );
-            const endDate = new Date(2000, 0, 1, endTime.hour, endTime.minute);
-            warnings.timeConflict = endDate <= startDate;
-        }
-
-        if (startTime && endTime && restStartObj && restEndObj) {
-            const workStart = new Date(
-                2000,
-                0,
-                1,
-                startTime.hour,
-                startTime.minute,
-            );
-            const workEnd = new Date(2000, 0, 1, endTime.hour, endTime.minute);
-            const restStart = new Date(
-                2000,
-                0,
-                1,
-                restStartObj.hour,
-                restStartObj.minute,
-            );
-            const restEnd = new Date(
-                2000,
-                0,
-                1,
-                restEndObj.hour,
-                restEndObj.minute,
-            );
-
-            warnings.restOutOfRange =
-                restStart < workStart || restEnd > workEnd;
-        }
-    }
-
-    function loadSavedTimes() {
-        try {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                const { start, end, restStart, restEnd } = parsed;
-                if (start) {
-                    config.startTime = start;
-                    lastValidTimes.startTime = start;
-                }
-                if (end) {
-                    config.endTime = end;
-                    lastValidTimes.endTime = end;
-                }
-                if (restStart) {
-                    config.restStart = restStart;
-                    lastValidTimes.restStart = restStart;
-                }
-                if (restEnd) {
-                    config.restEnd = restEnd;
-                    lastValidTimes.restEnd = restEnd;
-                }
-            }
-        } catch (e) {
-            console.warn("加载配置失败，使用默认值:", e);
-        }
-    }
-
-    function saveTimes() {
-        try {
-            const configData = {
-                start: config.startTime,
-                end: config.endTime,
-                restStart: config.restStart,
-                restEnd: config.restEnd,
-            };
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(configData));
-            validateTimeConfig();
-        } catch (e) {
-            console.warn("保存配置失败:", e);
-        }
-    }
-
-    function saveAndUpdate() {
-        saveTimes();
-        updateRemaining();
-    }
-
-    function resetToDefault() {
-        config.startTime = "09:00";
-        config.endTime = "18:00";
-        config.restStart = "12:00";
-        config.restEnd = "13:00";
-        saveTimes();
-        updateRemaining();
-    }
+    const showModal = ref(false);
+    const showCarTool = ref(false);
+    const closeButton = ref(null);
+    let lastFocused = null;
 
     function openModal() {
+        lastFocused = document.activeElement;
         showModal.value = true;
+        nextTick(() => closeButton.value?.focus());
     }
 
     function closeModal() {
         showModal.value = false;
+        lastFocused?.focus?.();
+        lastFocused = null;
     }
 
-    function handleKeydown(e) {
-        if ((e.ctrlKey || e.metaKey) && e.key === "r") {
-            e.preventDefault();
-            resetToDefault();
+    // 弹窗打开时锁住背景滚动
+    watch(showModal, (open) => {
+        document.body.style.overflow = open ? "hidden" : "";
+    });
+
+    function handleTimeInput(event, field) {
+        if (!updateTime(field, event.target.value)) {
+            event.target.value = config[field];
+            navigator.vibrate?.(50);
         }
-        if (e.key === "Escape") {
+    }
+
+    function handleTimeChange(event, field) {
+        if (updateTime(field, event.target.value)) {
+            commitTimes();
+            return;
+        }
+        event.target.value = config[field];
+        event.target.blur();
+        setTimeout(() => event.target.focus(), 100);
+    }
+
+    function isTypingTarget(target) {
+        return (
+            target instanceof HTMLElement &&
+            (target.closest("input, select, textarea") !== null ||
+                target.isContentEditable)
+        );
+    }
+
+    function handleKeydown(event) {
+        if (
+            (event.ctrlKey || event.metaKey) &&
+            event.key.toLowerCase() === "r"
+        ) {
+            // 在输入框里按 Ctrl+R 时不重置，避免和购车工具输入冲突
+            if (isTypingTarget(event.target)) return;
+            event.preventDefault();
+            resetToDefault();
+            return;
+        }
+        if (event.key === "Escape" && showModal.value) {
             closeModal();
         }
     }
 
-    function handleTimeInput(event, fieldName) {
-        const newValue = event.target.value;
-
-        if (!newValue || newValue.trim() === "") {
-            event.target.value = lastValidTimes[fieldName];
-            config[fieldName] = lastValidTimes[fieldName];
-
-            if (navigator.vibrate) {
-                navigator.vibrate(50);
-            }
-
-            return false;
-        }
-
-        lastValidTimes[fieldName] = newValue;
-        return true;
-    }
-
-    function handleTimeChange(event, fieldName) {
-        const isValid = handleTimeInput(event, fieldName);
-
-        if (isValid) {
-            saveAndUpdate();
-        } else {
-            event.target.blur();
-            setTimeout(() => {
-                event.target.focus();
-            }, 100);
-        }
-    }
-
-    function tick() {
-        updateClock();
-        updateRemaining();
-    }
-
     onMounted(() => {
-        loadSavedTimes();
-        tick();
-        timer = setInterval(tick, 1000);
         document.addEventListener("keydown", handleKeydown);
-
-        document.addEventListener("visibilitychange", () => {
-            if (document.hidden) {
-                clearInterval(timer);
-                timer = setInterval(tick, 5000);
-            } else {
-                clearInterval(timer);
-                timer = setInterval(tick, 1000);
-                tick();
-            }
-        });
     });
 
     onUnmounted(() => {
-        if (timer) {
-            clearInterval(timer);
-        }
         document.removeEventListener("keydown", handleKeydown);
+        document.body.style.overflow = "";
     });
 </script>
 
 <style scoped>
-    * {
-        box-sizing: border-box;
-        font-family:
-            system-ui,
-            -apple-system,
-            "Segoe UI",
-            Roboto,
-            "Helvetica Neue",
-            sans-serif;
-        margin: 0;
-        padding: 0;
-        -webkit-tap-highlight-color: transparent;
-    }
-
-    body {
-        min-height: 100vh;
-        min-height: -webkit-fill-available;
-        background: linear-gradient(145deg, #f9f3e8 0%, #fff4e4 100%);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        padding: 12px;
-        margin: 0;
-        overflow-x: hidden;
-        touch-action: manipulation;
-        -webkit-overflow-scrolling: touch;
-    }
-
     .card {
         max-width: 600px;
         width: 100%;
@@ -909,11 +459,6 @@
         display: block;
     }
 
-    #workedContainer {
-        display: none;
-        text-align: center;
-    }
-
     .countdown-block {
         background: #362f28;
         border-radius: 50px;
@@ -990,19 +535,68 @@
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
 
-    .worked-badge {
-        display: inline-block;
-        background: #d8d0c0;
-        border-radius: 40px;
-        padding: clamp(8px, 2vw, 10px) clamp(14px, 3vw, 20px);
-        font-size: clamp(0.95rem, 2.5vw, 1.1rem);
+    .tool-panel {
+        margin: 14px 0 4px;
+        padding: 14px 16px 16px;
+        border: 1px dashed #e5c9a8;
+        border-radius: 30px;
+        background: #fff8ef;
+    }
+
+    .tool-title {
+        margin-bottom: 8px;
+        padding-left: 4px;
+        font-size: 0.95rem;
         font-weight: 600;
-        color: #2d3e3a;
-        box-shadow: 0 4px 0 #8f7e6b;
-        margin: 8px 0 4px;
-        width: auto;
-        max-width: 100%;
-        font-family: "JetBrains Mono", monospace;
+        color: #9b5f2e;
+    }
+
+    .tool-entry {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 11px 14px;
+        border: 1px solid #ead6c2;
+        border-radius: 22px;
+        background: #fff;
+        color: #4a3a2a;
+        text-align: left;
+        cursor: pointer;
+        box-shadow: 0 4px 0 #e3cbb1;
+        transition: all 0.2s;
+    }
+
+    .tool-entry:active {
+        transform: translateY(2px);
+        box-shadow: 0 2px 0 #e3cbb1;
+    }
+
+    .tool-entry-icon {
+        font-size: 1.5rem;
+        line-height: 1;
+    }
+
+    .tool-entry-text {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        gap: 2px;
+        min-width: 0;
+    }
+
+    .tool-entry-text strong {
+        font-size: 1rem;
+    }
+
+    .tool-entry-text small {
+        font-size: 0.78rem;
+        color: #9b8a78;
+    }
+
+    .tool-entry-arrow {
+        font-size: 1.4rem;
+        color: #c0a78c;
     }
 
     .footer-note {
@@ -1100,11 +694,6 @@
             padding: 10px 20px;
         }
 
-        .worked-badge {
-            font-size: 1rem;
-            padding: 8px 16px;
-        }
-
         .time-panel {
             padding: 16px 14px;
         }
@@ -1177,11 +766,6 @@
     }
 
     @media (orientation: landscape) and (max-height: 500px) {
-        body {
-            padding: 8px;
-            align-items: flex-start;
-        }
-
         .card {
             padding: 16px;
             max-height: calc(100vh - 16px);
@@ -1333,7 +917,6 @@
         font-size: 0.85rem;
         margin-top: 8px;
         padding-left: 8px;
-        display: none;
         line-height: 1.4;
     }
 
@@ -1343,28 +926,23 @@
         }
     }
 
-    @media screen and (-webkit-min-device-pixel-ratio: 0) {
-        body {
-            min-height: -webkit-fill-available;
-        }
-    }
     .app {
+        display: flex;
+        justify-content: center;
         width: 100%;
-        min-height: 100vh;
+        min-height: 100%;
     }
 
-    * {
-        box-sizing: border-box;
-        font-family:
-            system-ui,
-            -apple-system,
-            "Segoe UI",
-            Roboto,
-            "Helvetica Neue",
-            sans-serif;
-        margin: 0;
-        padding: 0;
-        -webkit-tap-highlight-color: transparent;
+    button:focus-visible,
+    input:focus-visible {
+        outline: 3px solid #b25f1f;
+        outline-offset: 2px;
     }
-    /* ... 其余样式保持不变 ... */
+
+    @media (prefers-reduced-motion: reduce) {
+        * {
+            transition-duration: 0.01ms !important;
+            animation-duration: 0.01ms !important;
+        }
+    }
 </style>

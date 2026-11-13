@@ -1,12 +1,14 @@
 {
   "name": "work-timer",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "极简工时/下班倒计时：支持午休扣除、跨零点班次、配置本地保存",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test tests/"
   },
   "dependencies": {
     "vue": "^3.5.30"

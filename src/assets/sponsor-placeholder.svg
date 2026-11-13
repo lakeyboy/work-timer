@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="赞助二维码占位图">
+  <rect width="180" height="180" rx="14" fill="#fdf3e7" stroke="#ead6c2" stroke-width="2" />
+  <g fill="none" stroke="#c9a888" stroke-width="3" stroke-dasharray="8 6">
+    <rect x="24" y="24" width="40" height="40" rx="6" />
+    <rect x="116" y="24" width="40" height="40" rx="6" />
+    <rect x="24" y="116" width="40" height="40" rx="6" />
+  </g>
+  <g fill="#c9a888">
+    <rect x="34" y="34" width="20" height="20" rx="2" />
+    <rect x="126" y="34" width="20" height="20" rx="2" />
+    <rect x="34" y="126" width="20" height="20" rx="2" />
+  </g>
+  <text x="90" y="88" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" fill="#9b7a5c">赞助二维码</text>
+  <text x="90" y="108" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="#b79b80">把这里换成你的收款码</text>
+</svg>

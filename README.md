@@ -1,5 +1,61 @@
-# Vue 3 + Vite
+# 工时 · 下班倒计时
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+极简的纯前端工时面板：设置上下班与午休时间，实时显示当前状态、距离下班的倒计时和已工作时长（自动扣除午休）。所有数据只保存在本机浏览器，不联网、无后端。
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+## 功能
+
+- **状态自动切换**：未上班 / 上班中 / 已下班，下班后自动隐藏倒计时模块
+- **跨零点班次**：支持 `22:00–06:00` 这类夜班，凌晨时段状态判定正确
+- **已工作时长**：精确到秒，扣除午休；处于午休期间时暂停累计
+- **配置本地保存**：`localStorage`（key 为 `workTimeConfigV5`），刷新不丢失
+- **购车小工具**：底部「小工具」区域可换算轮胎 DOT 编码（周 + 年）与汽车玻璃日期编码（单排点 / 双排点）
+- **省电**：页面切到后台时刷新频率从 1s 降到 5s，回到前台立即补算
+- **快捷键**：`Ctrl/Cmd + R` 重置为 09:00–18:00 / 午休 12:00–13:00，`Esc` 关闭弹窗
+- 适配移动端、横屏、刘海屏，并带有基础的 ARIA 标注
+
+## 开发
+
+```bash
+npm install
+npm run dev      # 本地开发
+npm test         # node:test 单元测试（无需额外依赖）
+npm run build    # 产物输出到 dist/
+npm run preview  # 预览构建结果
+```
+
+> 构建需要 Node.js 20.19+ 或 22.12+（Vite 8 的要求）。版本过低时 Vite 会给出警告。
+
+## 目录结构
+
+```
+src/utils/time.js                  纯函数：时间解析、班次判定、工时/午休计算、配置校验
+src/utils/carDate.js               纯函数：轮胎 DOT、玻璃日期编码换算
+src/composables/useWorkClock.js    响应式时钟：配置持久化、定时器、状态与倒计时派生值
+src/components/CarDateTool.vue     购车工具弹窗（轮胎 / 玻璃换算）
+src/App.vue                        界面、交互与组件样式
+src/style.css                      全局基础样式（body 背景、居中、重置）
+tests/time.test.js                 上下班 / 工时算法的单元测试
+tests/carDate.test.js              购车工具换算的单元测试
+```
+
+## 购车工具编码规则
+
+- **轮胎**：DOT 后四位为 `周周 + 年年`，例如 `3523` = 2023 年第 35 周，换算后给出该周的起止日期。
+- **玻璃**：可选四种常见编码形式——
+  1. **单排点**（最常见）：数字代表年份个位；圆点在数字前表示上半年，`月份 = 7 − 点数`；在数字后表示下半年，`月份 = 13 − 点数`。
+  2. **双排点**：部分品牌用第一排点数表示月份，第二排大点 = 10 天、小点 = 1 天，可精确到日。
+  3. **点数即月份**：部分进口 / 韩系玻璃直接数点，1–12 个点对应 1–12 月。
+  4. **只有年份数字**：只能判断年份，无法确定月份。
+
+不同品牌编码可能略有差异，工具结果仅供参考。
+
+## 部署
+
+推送到 `main` 分支后由 `.github/workflows/deploy.yml` 自动构建并发布到 GitHub Pages。
+
+`vite.config.js` 中的 `base` 默认是 `/work-timer/`，**仓库改名时需要同步修改**，否则静态资源会 404。
+
+## 备注
+
+- 赞助弹窗里的二维码是占位图（`src/assets/sponsor-placeholder.svg`），替换成自己的收款码即可。
+- 暂不区分工作日 / 节假日，倒计时按「每天同一时间」循环计算。
