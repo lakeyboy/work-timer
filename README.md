@@ -17,7 +17,7 @@
 
 ```bash
 npm install
-npm run dev      # 本地开发
+npm run dev      # 本地开发1
 npm test         # node:test 单元测试（无需额外依赖）
 npm run build    # 产物输出到 dist/
 npm run preview  # 预览构建结果
